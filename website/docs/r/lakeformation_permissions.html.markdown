@@ -8,7 +8,7 @@ description: |-
 
 # Resource: aws_lakeformation_permissions
 
-Grants permissions to the principal to access metadata in the Data Catalog and data organized in underlying data storage such as Amazon S3. Permissions are granted to a principal, in a Data Catalog, relative to a Lake Formation resource, which includes the Data Catalog, databases, and tables. For more information, see [Security and Access Control to Metadata and Data in Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/security-data-access.html).
+Grants permissions to the principal to access metadata in the Data Catalog and data organized in underlying data storage such as Amazon S3. Permissions are granted to a principal, in a Data Catalog, relative to a Lake Formation resource, which includes the Data Catalog, databases, tables, and policy tags. For more information, see [Security and Access Control to Metadata and Data in Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/security-data-access.html).
 
 !> **WARNING:** Lake Formation permissions are not in effect by default within AWS. Using this resource will not secure your data and will result in errors if you do not change the security settings for existing resources and the default security settings for new resources. See [Default Behavior and `IAMAllowedPrincipals`](#default-behavior-and-iamallowedprincipals) for additional details.
 
@@ -128,8 +128,13 @@ resource "aws_lakeformation_permissions" "example" {
 
 The following arguments are required:
 
+<<<<<<< HEAD
 * `permissions` – (Required) List of permissions granted to the principal. Valid values may include `ALL`, `ALTER`, `CREATE_DATABASE`, `CREATE_TABLE`, `DATA_LOCATION_ACCESS`, `DELETE`, `DESCRIBE`, `DROP`, `INSERT`, and `SELECT`. For details on each permission, see [Lake Formation Permissions Reference](https://docs.aws.amazon.com/lake-formation/latest/dg/lf-permissions-reference.html).
 * `principal` – (Required) Principal to be granted the permissions on the resource. Supported principals include `IAM_ALLOWED_PRINCIPALS` (see [Default Behavior and `IAMAllowedPrincipals`](#default-behavior-and-iamallowedprincipals) above), IAM roles, users, groups, SAML groups and users, QuickSight groups, OUs, and organizations as well as AWS account IDs for cross-account permissions. For more information, see [Lake Formation Permissions Reference](https://docs.aws.amazon.com/lake-formation/latest/dg/lf-permissions-reference.html).
+=======
+* `permissions` – (Required) List of permissions granted to the principal. Valid values may include `ALL`, `ALTER`, `ASSOCIATE`, `CREATE_DATABASE`, `CREATE_TABLE`, `DATA_LOCATION_ACCESS`, `DELETE`, `DESCRIBE`, `DROP`, `INSERT`, and `SELECT`. For details on each permission, see [Lake Formation Permissions Reference](https://docs.aws.amazon.com/lake-formation/latest/dg/lf-permissions-reference.html).
+* `principal` – (Required) Principal to be granted the permissions on the resource. Supported principals include IAM roles, users, groups, SAML groups and users, QuickSight groups, OUs, and organizations as well as AWS account IDs for cross-account permissions. For more information, see [Lake Formation Permissions Reference](https://docs.aws.amazon.com/lake-formation/latest/dg/lf-permissions-reference.html).
+>>>>>>> 4a7c6cfb0b (Policy tag support for aws_lakeformation_permissions)
 
 ~> **NOTE:** We highly recommend that the `principal` _NOT_ be a Lake Formation administrator (granted using `aws_lakeformation_data_lake_settings`). The entity (e.g., IAM role) running Terraform will most likely need to be a Lake Formation administrator. As such, the entity will have implicit permissions and does not need permissions granted through this resource.
 
@@ -138,6 +143,7 @@ One of the following is required:
 * `catalog_resource` - (Optional) Whether the permissions are to be granted for the Data Catalog. Defaults to `false`.
 * `data_location` - (Optional) Configuration block for a data location resource. Detailed below.
 * `database` - (Optional) Configuration block for a database resource. Detailed below.
+* `policy_tag` - (Optional) Configuration block for a policy tag resource. Detailed below.
 * `table` - (Optional) Configuration block for a table resource. Detailed below.
 * `table_with_columns` - (Optional) Configuration block for a table with columns resource. Detailed below.
 
@@ -161,6 +167,17 @@ The following argument is optional:
 The following argument is required:
 
 * `name` – (Required) Name of the database resource. Unique to the Data Catalog.
+
+The following argument is optional:
+
+* `catalog_id` - (Optional) Identifier for the Data Catalog. By default, it is the account ID of the caller.
+
+### policy_tag
+
+The following arguments are required:
+
+* `key` – (Required) The key-name for the tag.
+* `values` - (Required) A list of possible values an attribute can take.
 
 The following argument is optional:
 
