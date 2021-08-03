@@ -102,11 +102,11 @@ func testAccAWSLakeFormationPermissions_database(t *testing.T) {
 	})
 }
 
-func testAccAWSLakeFormationPermissions_policy_tag(t *testing.T) {
+func testAccAWSLakeFormationPermissions_lf_tag(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-test")
 	resourceName := "aws_lakeformation_permissions.test"
 	roleName := "aws_iam_role.test"
-	tagName := "aws_lakeformation_policy_tag.test"
+	tagName := "aws_lakeformation_lf_tag.test"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t); testAccPartitionHasServicePreCheck(lakeformation.EndpointsID, t) },
@@ -115,15 +115,15 @@ func testAccAWSLakeFormationPermissions_policy_tag(t *testing.T) {
 		CheckDestroy: testAccCheckAWSLakeFormationPermissionsDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAWSLakeFormationPermissionsConfig_policy_tag(rName),
+				Config: testAccAWSLakeFormationPermissionsConfig_lf_tag(rName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckAWSLakeFormationPermissionsExists(resourceName),
 					resource.TestCheckResourceAttrPair(resourceName, "principal", roleName, "arn"),
 					resource.TestCheckResourceAttr(resourceName, "catalog_resource", "false"),
 					resource.TestCheckResourceAttrPair(resourceName, "principal", roleName, "arn"),
-					resource.TestCheckResourceAttr(resourceName, "policy_tag.#", "1"),
-					resource.TestCheckResourceAttrPair(resourceName, "policy_tag.0.key", tagName, "key"),
-					resource.TestCheckResourceAttrPair(resourceName, "policy_tag.0.values", tagName, "values"),
+					resource.TestCheckResourceAttr(resourceName, "lf_tag.#", "1"),
+					resource.TestCheckResourceAttrPair(resourceName, "lf_tag.0.key", tagName, "key"),
+					resource.TestCheckResourceAttrPair(resourceName, "lf_tag.0.values", tagName, "values"),
 					resource.TestCheckResourceAttr(resourceName, "permissions.#", "2"),
 					resource.TestCheckResourceAttr(resourceName, "permissions.0", "ASSOCIATE"),
 					resource.TestCheckResourceAttr(resourceName, "permissions.1", "DESCRIBE"),
@@ -441,21 +441,21 @@ func permissionCountForLakeFormationResource(conn *lakeformation.LakeFormation, 
 		input.Resource.Database = expandLakeFormationDatabaseResource(tfMap)
 	}
 
-	if v, ok := rs.Primary.Attributes["policy_tag.#"]; ok && v != "" && v != "0" {
+	if v, ok := rs.Primary.Attributes["lf_tag.#"]; ok && v != "" && v != "0" {
 		tfMap := map[string]interface{}{}
 
-		if v := rs.Primary.Attributes["policy_tag.0.catalog_id"]; v != "" {
+		if v := rs.Primary.Attributes["lf_tag.0.catalog_id"]; v != "" {
 			tfMap["catalog_id"] = v
 		}
 
-		if v := rs.Primary.Attributes["policy_tag.0.key"]; v != "" {
+		if v := rs.Primary.Attributes["lf_tag.0.key"]; v != "" {
 			tfMap["key"] = v
 		}
 
-		if count, err := strconv.Atoi(rs.Primary.Attributes["policy_tag.0.values.#"]); err == nil {
+		if count, err := strconv.Atoi(rs.Primary.Attributes["lf_tag.0.values.#"]); err == nil {
 			var tagValues []string
 			for i := 0; i < count; i++ {
-				tagValues = append(tagValues, rs.Primary.Attributes[fmt.Sprintf("policy_tag.0.values.%d", i)])
+				tagValues = append(tagValues, rs.Primary.Attributes[fmt.Sprintf("lf_tag.0.values.%d", i)])
 			}
 			tfMap["values"] = flattenStringSet(aws.StringSlice(tagValues))
 		}
@@ -760,7 +760,7 @@ resource "aws_lakeformation_permissions" "test" {
 `, rName)
 }
 
-func testAccAWSLakeFormationPermissionsConfig_policy_tag(rName string) string {
+func testAccAWSLakeFormationPermissionsConfig_lf_tag(rName string) string {
 	return fmt.Sprintf(`
 data "aws_partition" "current" {}
 
@@ -790,7 +790,7 @@ resource "aws_lakeformation_data_lake_settings" "test" {
   admins = [data.aws_caller_identity.current.arn]
 }
 
-resource "aws_lakeformation_policy_tag" "test" {
+resource "aws_lakeformation_lf_tag" "test" {
   key    = %[1]q
   values = ["value1", "value2"]
 
@@ -803,9 +803,9 @@ resource "aws_lakeformation_permissions" "test" {
   permissions_with_grant_option = ["ASSOCIATE", "DESCRIBE"]
   principal                     = aws_iam_role.test.arn
 
-  policy_tag {
-    key    = aws_lakeformation_policy_tag.test.key
-    values = aws_lakeformation_policy_tag.test.values
+  lf_tag {
+    key    = aws_lakeformation_lf_tag.test.key
+    values = aws_lakeformation_lf_tag.test.values
   }
 
   # for consistency, ensure that admins are setup before testing

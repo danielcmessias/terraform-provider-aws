@@ -87,7 +87,7 @@ func testAccAWSLakeFormationPermissionsDataSource_database(t *testing.T) {
 	})
 }
 
-func testAccAWSLakeFormationPermissionsDataSource_policy_tag(t *testing.T) {
+func testAccAWSLakeFormationPermissionsDataSource_lf_tag(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-test")
 	resourceName := "aws_lakeformation_permissions.test"
 	dataSourceName := "data.aws_lakeformation_permissions.test"
@@ -99,12 +99,12 @@ func testAccAWSLakeFormationPermissionsDataSource_policy_tag(t *testing.T) {
 		CheckDestroy: testAccCheckAWSLakeFormationPermissionsDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAWSLakeFormationPermissionsDataSourceConfig_policy_tag(rName),
+				Config: testAccAWSLakeFormationPermissionsDataSourceConfig_lf_tag(rName),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttrPair(resourceName, "principal", dataSourceName, "principal"),
-					resource.TestCheckResourceAttrPair(resourceName, "policy_tag.#", dataSourceName, "policy_tag.#"),
-					resource.TestCheckResourceAttrPair(resourceName, "policy_tag.0.key", dataSourceName, "policy_tag.0.key"),
-					resource.TestCheckResourceAttrPair(resourceName, "policy_tag.0.values", dataSourceName, "policy_tag.0.values"),
+					resource.TestCheckResourceAttrPair(resourceName, "lf_tag.#", dataSourceName, "lf_tag.#"),
+					resource.TestCheckResourceAttrPair(resourceName, "lf_tag.0.key", dataSourceName, "lf_tag.0.key"),
+					resource.TestCheckResourceAttrPair(resourceName, "lf_tag.0.values", dataSourceName, "lf_tag.0.values"),
 					resource.TestCheckResourceAttrPair(resourceName, "permissions.#", dataSourceName, "permissions.#"),
 					resource.TestCheckResourceAttrPair(resourceName, "permissions.0", dataSourceName, "permissions.0"),
 					resource.TestCheckResourceAttrPair(resourceName, "permissions.1", dataSourceName, "permissions.1"),
@@ -343,7 +343,7 @@ data "aws_lakeformation_permissions" "test" {
 `, rName)
 }
 
-func testAccAWSLakeFormationPermissionsDataSourceConfig_policy_tag(rName string) string {
+func testAccAWSLakeFormationPermissionsDataSourceConfig_lf_tag(rName string) string {
 	return fmt.Sprintf(`
 data "aws_partition" "current" {}
 
@@ -374,7 +374,7 @@ resource "aws_lakeformation_data_lake_settings" "test" {
   admins = [data.aws_caller_identity.current.arn]
  }
 
-resource "aws_lakeformation_policy_tag" "test" {
+resource "aws_lakeformation_lf_tag" "test" {
   key    = %[1]q
   values = ["value1", "value2"]
 
@@ -387,9 +387,9 @@ resource "aws_lakeformation_permissions" "test" {
   permissions_with_grant_option = ["ASSOCIATE", "DESCRIBE"]
   principal                     = aws_iam_role.test.arn
 
-  policy_tag {
-    key    = aws_lakeformation_policy_tag.test.key
-    values = aws_lakeformation_policy_tag.test.values
+  lf_tag {
+    key    = aws_lakeformation_lf_tag.test.key
+    values = aws_lakeformation_lf_tag.test.values
   }
 
   # for consistency, ensure that admins are setup before testing
@@ -399,9 +399,9 @@ resource "aws_lakeformation_permissions" "test" {
 data "aws_lakeformation_permissions" "test" {
   principal = aws_lakeformation_permissions.test.principal
 
-  policy_tag {
-    key    = aws_lakeformation_policy_tag.test.key
-    values = aws_lakeformation_policy_tag.test.values
+  lf_tag {
+    key    = aws_lakeformation_lf_tag.test.key
+    values = aws_lakeformation_lf_tag.test.values
   }
 }
 `, rName)
