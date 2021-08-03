@@ -13,20 +13,20 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
-func testAccAWSLakeFormationPolicyTag_basic(t *testing.T) {
-	resourceName := "aws_lakeformation_policy_tag.test"
+func testAccAWSLakeFormationLFTag_basic(t *testing.T) {
+	resourceName := "aws_lakeformation_lf_tag.test"
 	rKey := acctest.RandomWithPrefix("tf-acc-test")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t); testAccPartitionHasServicePreCheck(lakeformation.EndpointsID, t) },
 		ErrorCheck:   testAccErrorCheck(t, lakeformation.EndpointsID),
 		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckAWSLakeFormationPolicyTagsDestroy,
+		CheckDestroy: testAccCheckAWSLakeFormationLFTagsDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAWSLakeFormationPolicyTagConfig_basic(rKey),
+				Config: testAccAWSLakeFormationLFTagConfig_basic(rKey),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckAWSLakeFormationPolicyTagExists(resourceName),
+					testAccCheckAWSLakeFormationLFTagExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "key", rKey),
 					resource.TestCheckResourceAttr(resourceName, "values.0", "value"),
 					testAccCheckResourceAttrAccountID(resourceName, "catalog_id"),
@@ -41,21 +41,21 @@ func testAccAWSLakeFormationPolicyTag_basic(t *testing.T) {
 	})
 }
 
-func testAccAWSLakeFormationPolicyTag_disappears(t *testing.T) {
-	resourceName := "aws_lakeformation_policy_tag.test"
+func testAccAWSLakeFormationLFTag_disappears(t *testing.T) {
+	resourceName := "aws_lakeformation_lf_tag.test"
 	rKey := acctest.RandomWithPrefix("tf-acc-test")
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t); testAccPartitionHasServicePreCheck(lakeformation.EndpointsID, t) },
 		ErrorCheck:   testAccErrorCheck(t, lakeformation.EndpointsID),
 		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckAWSLakeFormationPolicyTagsDestroy,
+		CheckDestroy: testAccCheckAWSLakeFormationLFTagsDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAWSLakeFormationPolicyTagConfig_basic(rKey),
+				Config: testAccAWSLakeFormationLFTagConfig_basic(rKey),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckAWSLakeFormationPolicyTagExists(resourceName),
-					testAccCheckResourceDisappears(testAccProvider, resourceAwsLakeFormationPolicyTag(), resourceName),
+					testAccCheckAWSLakeFormationLFTagExists(resourceName),
+					testAccCheckResourceDisappears(testAccProvider, resourceAwsLakeFormationLFTag(), resourceName),
 				),
 				ExpectNonEmptyPlan: true,
 			},
@@ -63,21 +63,21 @@ func testAccAWSLakeFormationPolicyTag_disappears(t *testing.T) {
 	})
 }
 
-func testAccAWSLakeFormationPolicyTag_values(t *testing.T) {
-	resourceName := "aws_lakeformation_policy_tag.test"
+func testAccAWSLakeFormationLFTag_values(t *testing.T) {
+	resourceName := "aws_lakeformation_lf_tag.test"
 	rKey := acctest.RandomWithPrefix("tf-acc-test")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t); testAccPartitionHasServicePreCheck(lakeformation.EndpointsID, t) },
 		ErrorCheck:   testAccErrorCheck(t, lakeformation.EndpointsID),
 		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckAWSLakeFormationPolicyTagsDestroy,
+		CheckDestroy: testAccCheckAWSLakeFormationLFTagsDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config:  testAccAWSLakeFormationPolicyTagConfig_values(rKey, []string{"value1", "value2"}),
+				Config:  testAccAWSLakeFormationLFTagConfig_values(rKey, []string{"value1", "value2"}),
 				Destroy: false,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckAWSLakeFormationPolicyTagExists(resourceName),
+					testAccCheckAWSLakeFormationLFTagExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "key", rKey),
 					resource.TestCheckResourceAttr(resourceName, "values.0", "value1"),
 					testAccCheckResourceAttrAccountID(resourceName, "catalog_id"),
@@ -90,9 +90,9 @@ func testAccAWSLakeFormationPolicyTag_values(t *testing.T) {
 			},
 			{
 				// Test an update that adds, removes and retains a tag value
-				Config: testAccAWSLakeFormationPolicyTagConfig_values(rKey, []string{"value1", "value3"}),
+				Config: testAccAWSLakeFormationLFTagConfig_values(rKey, []string{"value1", "value3"}),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckAWSLakeFormationPolicyTagExists(resourceName),
+					testAccCheckAWSLakeFormationLFTagExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "key", rKey),
 					resource.TestCheckResourceAttr(resourceName, "values.0", "value1"),
 					resource.TestCheckResourceAttr(resourceName, "values.1", "value3"),
@@ -103,15 +103,15 @@ func testAccAWSLakeFormationPolicyTag_values(t *testing.T) {
 	})
 }
 
-func testAccCheckAWSLakeFormationPolicyTagsDestroy(s *terraform.State) error {
+func testAccCheckAWSLakeFormationLFTagsDestroy(s *terraform.State) error {
 	conn := testAccProvider.Meta().(*AWSClient).lakeformationconn
 
 	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "aws_lakeformation_policy_tag" {
+		if rs.Type != "aws_lakeformation_lf_tag" {
 			continue
 		}
 
-		catalogID, tagKey, err := readPolicyTagID(rs.Primary.ID)
+		catalogID, tagKey, err := readLFTagID(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
@@ -131,13 +131,13 @@ func testAccCheckAWSLakeFormationPolicyTagsDestroy(s *terraform.State) error {
 			}
 			return err
 		}
-		return fmt.Errorf("Lake Formation Policy Tag (%s) still exists", rs.Primary.ID)
+		return fmt.Errorf("Lake Formation LF-Tag (%s) still exists", rs.Primary.ID)
 	}
 
 	return nil
 }
 
-func testAccCheckAWSLakeFormationPolicyTagExists(name string) resource.TestCheckFunc {
+func testAccCheckAWSLakeFormationLFTagExists(name string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
 		if !ok {
@@ -148,7 +148,7 @@ func testAccCheckAWSLakeFormationPolicyTagExists(name string) resource.TestCheck
 			return fmt.Errorf("No ID is set")
 		}
 
-		catalogID, tagKey, err := readPolicyTagID(rs.Primary.ID)
+		catalogID, tagKey, err := readLFTagID(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
@@ -169,7 +169,7 @@ func testAccCheckAWSLakeFormationPolicyTagExists(name string) resource.TestCheck
 	}
 }
 
-func testAccAWSLakeFormationPolicyTagConfig_basic(rKey string) string {
+func testAccAWSLakeFormationLFTagConfig_basic(rKey string) string {
 	return fmt.Sprintf(`
 data "aws_caller_identity" "current" {}
 
@@ -177,7 +177,7 @@ resource "aws_lakeformation_data_lake_settings" "test" {
   admins = [data.aws_caller_identity.current.arn]
 }
 
-resource "aws_lakeformation_policy_tag" "test" {
+resource "aws_lakeformation_lf_tag" "test" {
   key    = %[1]q
   values = ["value"]
 
@@ -187,7 +187,7 @@ resource "aws_lakeformation_policy_tag" "test" {
 `, rKey)
 }
 
-func testAccAWSLakeFormationPolicyTagConfig_values(rKey string, values []string) string {
+func testAccAWSLakeFormationLFTagConfig_values(rKey string, values []string) string {
 	quotedValues := make([]string, len(values))
 	for i, v := range values {
 		quotedValues[i] = strconv.Quote(v)
@@ -200,7 +200,7 @@ resource "aws_lakeformation_data_lake_settings" "test" {
   admins = [data.aws_caller_identity.current.arn]
 }
 
-resource "aws_lakeformation_policy_tag" "test" {
+resource "aws_lakeformation_lf_tag" "test" {
   key    = %[1]q
   values = [%s]
 
