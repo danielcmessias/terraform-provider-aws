@@ -8,7 +8,7 @@ description: |-
 
 # Resource: aws_lakeformation_permissions
 
-Grants permissions to the principal to access metadata in the Data Catalog and data organized in underlying data storage such as Amazon S3. Permissions are granted to a principal, in a Data Catalog, relative to a Lake Formation resource, which includes the Data Catalog, databases, tables, and LF-tags. For more information, see [Security and Access Control to Metadata and Data in Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/security-data-access.html).
+Grants permissions to the principal to access metadata in the Data Catalog and data organized in underlying data storage such as Amazon S3. Permissions are granted to a principal, in a Data Catalog, relative to a Lake Formation resource, which includes the Data Catalog, databases, tables, LF-tags, and LF-tag policies. For more information, see [Security and Access Control to Metadata and Data in Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/security-data-access.html).
 
 !> **WARNING:** Lake Formation permissions are not in effect by default within AWS. Using this resource will not secure your data and will result in errors if you do not change the security settings for existing resources and the default security settings for new resources. See [Default Behavior and `IAMAllowedPrincipals`](#default-behavior-and-iamallowedprincipals) for additional details.
 
@@ -124,6 +124,30 @@ resource "aws_lakeformation_permissions" "example" {
 }
 ```
 
+### Grant Permissions Using Tag-Based Access Control
+
+```terraform
+resource "aws_lakeformation_permissions" "test" {
+  role        = aws_iam_role.sales_role.arn
+  permissions = ["CREATE_TABLE", "ALTER", "DROP"]
+
+  lf_tag_policy {
+    resource_type = "DATABASE"
+
+    expression {
+      key    = "Team"
+      values = ["Sales"]
+    }
+
+    expression {
+      key    = "Environment"
+      values = ["Dev", "Production"]
+    }
+  }
+}
+```
+
+
 ## Argument Reference
 
 The following arguments are required:
@@ -143,7 +167,8 @@ One of the following is required:
 * `catalog_resource` - (Optional) Whether the permissions are to be granted for the Data Catalog. Defaults to `false`.
 * `data_location` - (Optional) Configuration block for a data location resource. Detailed below.
 * `database` - (Optional) Configuration block for a database resource. Detailed below.
-* `lf_tag` - (Optional) Configuration block for a LF-tag resource. Detailed below.
+* `lf_tag` - (Optional) Configuration block for an LF-tag resource. Detailed below.
+* `lf_tag_policy` - (Optional) Configuration block for an LF-tag policy resource. Detailed below.
 * `table` - (Optional) Configuration block for a table resource. Detailed below.
 * `table_with_columns` - (Optional) Configuration block for a table with columns resource. Detailed below.
 
@@ -182,6 +207,22 @@ The following arguments are required:
 The following argument is optional:
 
 * `catalog_id` - (Optional) Identifier for the Data Catalog. By default, it is the account ID of the caller.
+
+### lf_tag_policy
+
+The following arguments are required:
+
+* `resource_type` – (Required) The resource type for which the tag policy applies. Valid values are `DATABASE` and `TABLE`.
+* `expression` - (Required) A list of tag conditions that apply to the resource's tag policy. Configuration block for tag conditions that apply to the policy. See [`expression`](#expression) below.
+
+The following argument is optional:
+
+* `catalog_id` - (Optional) Identifier for the Data Catalog. By default, it is the account ID of the caller.
+
+#### expression
+
+* `key` – (Required) The key-name of an LF-Tag.
+* `values` - (Required) A list of possible values of an LF-Tag.
 
 ### table
 

@@ -17,6 +17,7 @@ func TestAccAWSLakeFormation_serial(t *testing.T) {
 			"dataLocation": testAccAWSLakeFormationPermissions_dataLocation,
 			"database":     testAccAWSLakeFormationPermissions_database,
 			"LFTag":        testAccAWSLakeFormationPermissions_lf_tag,
+			"LFTagPolicy":  testAccAWSLakeFormationPermissions_lf_tag_policy,
 		},
 		"TablePermissions": {
 			"columnWildcardPermissions":           testAccAWSLakeFormationPermissions_columnWildcardPermissions,
@@ -33,6 +34,7 @@ func TestAccAWSLakeFormation_serial(t *testing.T) {
 			"dataLocationDataSource":     testAccAWSLakeFormationPermissionsDataSource_dataLocation,
 			"databaseDataSource":         testAccAWSLakeFormationPermissionsDataSource_database,
 			"LFTagDataSource":            testAccAWSLakeFormationPermissionsDataSource_lf_tag,
+			"LFTagPolicyDataSource":      testAccAWSLakeFormationPermissionsDataSource_lf_tag_policy,
 			"tableDataSource":            testAccAWSLakeFormationPermissionsDataSource_table,
 			"tableWithColumnsDataSource": testAccAWSLakeFormationPermissionsDataSource_tableWithColumns,
 		},
