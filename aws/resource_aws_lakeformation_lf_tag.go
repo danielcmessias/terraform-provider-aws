@@ -12,12 +12,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
-func resourceAwsLakeFormationPolicyTag() *schema.Resource {
+func resourceAwsLakeFormationLFTag() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceAwsLakeFormationPolicyTagCreate,
-		Read:   resourceAwsLakeFormationPolicyTagRead,
-		Update: resourceAwsLakeFormationPolicyTagUpdate,
-		Delete: resourceAwsLakeFormationPolicyTagDelete,
+		Create: resourceAwsLakeFormationLFTagCreate,
+		Read:   resourceAwsLakeFormationLFTagRead,
+		Update: resourceAwsLakeFormationLFTagUpdate,
+		Delete: resourceAwsLakeFormationLFTagDelete,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -36,7 +36,7 @@ func resourceAwsLakeFormationPolicyTag() *schema.Resource {
 				MaxItems: 15,
 				Elem: &schema.Schema{
 					Type:         schema.TypeString,
-					ValidateFunc: validatePolicyTagValues(),
+					ValidateFunc: validateLFTagValues(),
 				},
 				Set: schema.HashString,
 			},
@@ -50,7 +50,7 @@ func resourceAwsLakeFormationPolicyTag() *schema.Resource {
 	}
 }
 
-func resourceAwsLakeFormationPolicyTagCreate(d *schema.ResourceData, meta interface{}) error {
+func resourceAwsLakeFormationLFTagCreate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).lakeformationconn
 
 	tagKey := d.Get("key").(string)
@@ -71,18 +71,18 @@ func resourceAwsLakeFormationPolicyTagCreate(d *schema.ResourceData, meta interf
 
 	_, err := conn.CreateLFTag(input)
 	if err != nil {
-		return fmt.Errorf("Error creating Lake Formation Policy Tag: %w", err)
+		return fmt.Errorf("Error creating Lake Formation LF-Tag: %w", err)
 	}
 
 	d.SetId(fmt.Sprintf("%s:%s", catalogID, tagKey))
 
-	return resourceAwsLakeFormationPolicyTagRead(d, meta)
+	return resourceAwsLakeFormationLFTagRead(d, meta)
 }
 
-func resourceAwsLakeFormationPolicyTagRead(d *schema.ResourceData, meta interface{}) error {
+func resourceAwsLakeFormationLFTagRead(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).lakeformationconn
 
-	catalogID, tagKey, err := readPolicyTagID(d.Id())
+	catalogID, tagKey, err := readLFTagID(d.Id())
 	if err != nil {
 		return err
 	}
@@ -95,12 +95,12 @@ func resourceAwsLakeFormationPolicyTagRead(d *schema.ResourceData, meta interfac
 	output, err := conn.GetLFTag(input)
 	if err != nil {
 		if isAWSErr(err, lakeformation.ErrCodeEntityNotFoundException, "") {
-			log.Printf("[WARN] Lake Formation Policy Tag (%s) not found, removing from state", d.Id())
+			log.Printf("[WARN] Lake Formation LF-Tag (%s) not found, removing from state", d.Id())
 			d.SetId("")
 			return nil
 		}
 
-		return fmt.Errorf("Error reading Lake Formation Policy Tag: %s", err.Error())
+		return fmt.Errorf("Error reading Lake Formation LF-Tag: %s", err.Error())
 	}
 
 	d.Set("key", output.TagKey)
@@ -110,10 +110,10 @@ func resourceAwsLakeFormationPolicyTagRead(d *schema.ResourceData, meta interfac
 	return nil
 }
 
-func resourceAwsLakeFormationPolicyTagUpdate(d *schema.ResourceData, meta interface{}) error {
+func resourceAwsLakeFormationLFTagUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).lakeformationconn
 
-	catalogID, tagKey, err := readPolicyTagID(d.Id())
+	catalogID, tagKey, err := readLFTagID(d.Id())
 	if err != nil {
 		return err
 	}
@@ -139,16 +139,16 @@ func resourceAwsLakeFormationPolicyTagUpdate(d *schema.ResourceData, meta interf
 
 	_, err = conn.UpdateLFTag(input)
 	if err != nil {
-		return fmt.Errorf("Error updating Lake Formation Policy Tag (%s): %w", d.Id(), err)
+		return fmt.Errorf("Error updating Lake Formation LF-Tag (%s): %w", d.Id(), err)
 	}
 
-	return resourceAwsLakeFormationPolicyTagRead(d, meta)
+	return resourceAwsLakeFormationLFTagRead(d, meta)
 }
 
-func resourceAwsLakeFormationPolicyTagDelete(d *schema.ResourceData, meta interface{}) error {
+func resourceAwsLakeFormationLFTagDelete(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).lakeformationconn
 
-	catalogID, tagKey, err := readPolicyTagID(d.Id())
+	catalogID, tagKey, err := readLFTagID(d.Id())
 	if err != nil {
 		return err
 	}
@@ -160,13 +160,13 @@ func resourceAwsLakeFormationPolicyTagDelete(d *schema.ResourceData, meta interf
 
 	_, err = conn.DeleteLFTag(input)
 	if err != nil {
-		return fmt.Errorf("Error deleting Lake Formation Policy Tag (%s): %w", d.Id(), err)
+		return fmt.Errorf("Error deleting Lake Formation LF-Tag (%s): %w", d.Id(), err)
 	}
 
 	return nil
 }
 
-func readPolicyTagID(id string) (catalogID string, tagKey string, err error) {
+func readLFTagID(id string) (catalogID string, tagKey string, err error) {
 	idParts := strings.Split(id, ":")
 	if len(idParts) != 2 {
 		return "", "", fmt.Errorf("Unexpected format of ID (%q), expected CATALOG-ID:TAG-KEY", id)
@@ -174,7 +174,7 @@ func readPolicyTagID(id string) (catalogID string, tagKey string, err error) {
 	return idParts[0], idParts[1], nil
 }
 
-func validatePolicyTagValues() schema.SchemaValidateFunc {
+func validateLFTagValues() schema.SchemaValidateFunc {
 	return validation.All(
 		validation.StringLenBetween(1, 255),
 		validation.StringMatch(regexp.MustCompile(`^([\p{L}\p{Z}\p{N}_.:\*\/=+\-@%]*)$`), ""),
