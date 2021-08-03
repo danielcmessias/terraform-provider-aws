@@ -17,6 +17,7 @@ func TestAccAWSLakeFormation_serial(t *testing.T) {
 			"dataLocation": testAccAWSLakeFormationPermissions_dataLocation,
 			"database":     testAccAWSLakeFormationPermissions_database,
 			"LFTag":        testAccAWSLakeFormationPermissions_lf_tag,
+			// "LFTagPolicy":  testAccAWSLakeFormationPermissions_lf_tag_policy,
 		},
 		"TablePermissions": {
 			"columnWildcardPermissions":           testAccAWSLakeFormationPermissions_columnWildcardPermissions,
