@@ -34,10 +34,10 @@ func TestAccAWSLakeFormation_serial(t *testing.T) {
 			"tableDataSource":            testAccAWSLakeFormationPermissionsDataSource_table,
 			"tableWithColumnsDataSource": testAccAWSLakeFormationPermissionsDataSource_tableWithColumns,
 		},
-		"PolicyTag": {
-			"basic":      testAccAWSLakeFormationPolicyTag_basic,
-			"disappears": testAccAWSLakeFormationPolicyTag_disappears,
-			"values":     testAccAWSLakeFormationPolicyTag_values,
+		"LFTags": {
+			"basic":      testAccAWSLakeFormationLFTag_basic,
+			"disappears": testAccAWSLakeFormationLFTag_disappears,
+			"values":     testAccAWSLakeFormationLFTag_values,
 		},
 	}
 
