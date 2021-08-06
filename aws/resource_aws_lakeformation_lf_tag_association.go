@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/terraform-providers/terraform-provider-aws/aws/internal/hashcode"
 	iamwaiter "github.com/terraform-providers/terraform-provider-aws/aws/internal/service/iam/waiter"
-	tflakeformation "github.com/terraform-providers/terraform-provider-aws/aws/internal/service/lakeformation"
+	// tflakeformation "github.com/terraform-providers/terraform-provider-aws/aws/internal/service/lakeformation"
 	"github.com/terraform-providers/terraform-provider-aws/aws/internal/service/lakeformation/waiter"
 )
 
@@ -63,11 +63,8 @@ func resourceAwsLakeFormationLFTagAssociation() *schema.Resource {
 				MaxItems: 1,
 				Optional: true,
 				ExactlyOneOf: []string{
-					"catalog_resource",
-					"data_location",
 					"database",
 					"table",
-					"table_with_columns",
 				},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -221,15 +218,19 @@ func resourceAwsLakeFormationLFTagAssociationRead(d *schema.ResourceData, meta i
 	}
 
 	// tableType may be unnecessary here?
-	tableType := ""
+	// tableType := ""
 
 	if v, ok := d.GetOk("table"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
 		input.Resource.Table = expandLakeFormationTableResource(v.([]interface{})[0].(map[string]interface{}))
-		tableType = tflakeformation.TableTypeTable
+		// tableType = tflakeformation.TableTypeTable
 	}
 
 	// TODO: retries?
 	output, err := conn.GetResourceLFTags(input)
+
+	if err != nil {
+		return fmt.Errorf("can't get resource LF-Tags (input: %v): %w", input, err)
+	}
 
 	if len(output.LFTagOnDatabase) > 0 {
 		fmt.Printf("Found %d tags on Database resource", len(output.LFTagOnDatabase))
