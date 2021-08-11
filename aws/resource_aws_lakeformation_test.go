@@ -50,6 +50,13 @@ func TestAccAWSLakeFormation_serial(t *testing.T) {
 			"disappears": testAccAWSLakeFormationLFTag_disappears,
 			"values":     testAccAWSLakeFormationLFTag_values,
 		},
+		"LFTagAssociations": {
+			"basic": testAccAWSLakeFormationLFTagAssociation_basic,
+			"disappears": testAccAWSLakeFormationLFTagAssociation_disappears,
+			"database": testAccAWSLakeFormationLFTagAssociation_database,
+			"table": testAccAWSLakeFormationLFTagAssociation_table,
+			"table_with_columns": testAccAWSLakeFormationLFTagAssociation_table_with_columns,
+		}
 	}
 
 	for group, m := range testCases {

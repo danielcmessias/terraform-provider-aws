@@ -12,9 +12,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/terraform-providers/terraform-provider-aws/aws/internal/hashcode"
+	"github.com/terraform-providers/terraform-provider-aws/aws/internal/service/lakeformation/waiter"
 	iamwaiter "github.com/terraform-providers/terraform-provider-aws/aws/internal/service/iam/waiter"
 	tflakeformation "github.com/terraform-providers/terraform-provider-aws/aws/internal/service/lakeformation"
-	"github.com/terraform-providers/terraform-provider-aws/aws/internal/service/lakeformation/waiter"
 )
 
 func resourceAwsLakeFormationLFTagAssociation() *schema.Resource {
@@ -83,7 +83,6 @@ func resourceAwsLakeFormationLFTagAssociation() *schema.Resource {
 						},
 						"name": {
 							Type:     schema.TypeString,
-							Computed: true,
 							ForceNew: true,
 							Required: true,
 						},
@@ -304,6 +303,14 @@ func resourceAwsLakeFormationLFTagAssociationRead(d *schema.ResourceData, meta i
 		return fmt.Errorf("can't get resource LF-Tags (input: %v): %w", input, err)
 	}
 
+	if len(output.LFTagOnDatabase) == 0 && len(output.LFTagsOnTable) == 0 && len(output.LFTagsOnColumns) == 0 {
+		log.Printf("[WARN] No LF-Tag associations (%s) found", d.Id())
+		d.Set("database", nil)
+		d.Set("table", nil)
+		d.Set("table_with_columns", nil)
+		return nil
+	}
+
 	if resourceType == tflakeformation.DatabaseResourceType && len(output.LFTagOnDatabase) > 0 {
 		if err := d.Set("lf_tag", flattenLakeFormationLFTagPairs(output.LFTagOnDatabase)); err != nil {
 			return fmt.Errorf("error setting LF-tags on database resource: %w", err)
@@ -317,7 +324,7 @@ func resourceAwsLakeFormationLFTagAssociationRead(d *schema.ResourceData, meta i
 	}
 
 	if resourceType == tflakeformation.TableWithColumnsResourceType && len(output.LFTagsOnColumns) > 0 {
-		// Since a common set of LF-Tags is applied to list of columns, we should expect each element in output.LFTagsOnColumns to be equal
+		// Since a common set of LF-Tags is applied to list of columns, we should expect each output.LFTagsOnColumns[?].LFTags to be equal
 		left := output.LFTagsOnColumns[0].LFTags
 		for i := 1; i < len(output.LFTagsOnColumns); i++ {
 			right := output.LFTagsOnColumns[i].LFTags
