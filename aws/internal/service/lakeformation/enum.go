@@ -5,4 +5,8 @@ const (
 	TableTypeTable            = "Table"
 	TableTypeTableWithColumns = "TableWithColumns"
 	IAMAllowedPrincipals      = "IAM_ALLOWED_PRINCIPALS"
+
+	DatabaseResourceType         = "Database"
+	TableResourceType            = "Table"
+	TableWithColumnsResourceType = "TableWithColumns"
 )
