@@ -127,7 +127,7 @@ func dataSourceAwsLakeFormationPermissions() *schema.Resource {
 							Type:         schema.TypeString,
 							Optional:     true,
 							Computed:     true,
-							ValidateFunc: validateAwsAccountId,
+							ValidateFunc: verify.ValidAccountID,
 						},
 						"expression": {
 							Type:     schema.TypeList,
@@ -278,6 +278,14 @@ func dataSourceAwsLakeFormationPermissionsRead(d *schema.ResourceData, meta inte
 
 	if v, ok := d.GetOk("lf_tag_policy"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
 		input.Resource.LFTagPolicy = expandLakeFormationLFTagPolicyResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTag = ExpandLFTagKeyResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag_policy"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTagPolicy = ExpandLFTagPolicyResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	tableType := ""
