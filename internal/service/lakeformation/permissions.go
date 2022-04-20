@@ -1,60 +1,62 @@
-package lakeformation
+package aws
 
 import (
 	"fmt"
 	"log"
 	"reflect"
+	"sort"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/lakeformation"
-	"github.com/hashicorp/aws-sdk-go-base/v2/awsv1shim/v2/tfawserr"
+	"github.com/hashicorp/aws-sdk-go-base/tfawserr"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/hashicorp/terraform-provider-aws/internal/conns"
-	"github.com/hashicorp/terraform-provider-aws/internal/create"
-	"github.com/hashicorp/terraform-provider-aws/internal/flex"
-	tfiam "github.com/hashicorp/terraform-provider-aws/internal/service/iam"
-	"github.com/hashicorp/terraform-provider-aws/internal/tfresource"
-	"github.com/hashicorp/terraform-provider-aws/internal/verify"
+	"github.com/terraform-providers/terraform-provider-aws/aws/internal/hashcode"
+	iamwaiter "github.com/terraform-providers/terraform-provider-aws/aws/internal/service/iam/waiter"
+	"github.com/terraform-providers/terraform-provider-aws/aws/internal/tfresource"
 )
 
-func ResourcePermissions() *schema.Resource {
+func resourceAwsLakeFormationPermissions() *schema.Resource {
 	return &schema.Resource{
-		Create: resourcePermissionsCreate,
-		Read:   resourcePermissionsRead,
-		Delete: resourcePermissionsDelete,
+		Create: resourceAwsLakeFormationPermissionsCreate,
+		Read:   resourceAwsLakeFormationPermissionsRead,
+		Update: resourceAwsLakeFormationPermissionsCreate,
+		Delete: resourceAwsLakeFormationPermissionsDelete,
 
 		Schema: map[string]*schema.Schema{
 			"catalog_id": {
 				Type:         schema.TypeString,
 				ForceNew:     true,
 				Optional:     true,
-				ValidateFunc: verify.ValidAccountID,
+				ValidateFunc: validateAwsAccountId,
 			},
 			"catalog_resource": {
 				Type:     schema.TypeBool,
-				Default:  false,
-				ForceNew: true,
 				Optional: true,
+				Default:  false,
 				ExactlyOneOf: []string{
 					"catalog_resource",
 					"data_location",
 					"database",
+					"lf_tag",
+					"lf_tag_policy",
 					"table",
 					"table_with_columns",
 				},
 			},
 			"data_location": {
 				Type:     schema.TypeList,
-				Computed: true,
-				ForceNew: true,
-				MaxItems: 1,
 				Optional: true,
+				Computed: true,
+				MaxItems: 1,
 				ExactlyOneOf: []string{
 					"catalog_resource",
 					"data_location",
 					"database",
+					"lf_tag",
+					"lf_tag_policy",
 					"table",
 					"table_with_columns",
 				},
@@ -62,30 +64,29 @@ func ResourcePermissions() *schema.Resource {
 					Schema: map[string]*schema.Schema{
 						"arn": {
 							Type:         schema.TypeString,
-							ForceNew:     true,
 							Required:     true,
-							ValidateFunc: verify.ValidARN,
+							ValidateFunc: validateArn,
 						},
 						"catalog_id": {
 							Type:         schema.TypeString,
-							Computed:     true,
-							ForceNew:     true,
 							Optional:     true,
-							ValidateFunc: verify.ValidAccountID,
+							Computed:     true,
+							ValidateFunc: validateAwsAccountId,
 						},
 					},
 				},
 			},
 			"database": {
 				Type:     schema.TypeList,
-				Computed: true,
-				ForceNew: true,
-				MaxItems: 1,
 				Optional: true,
+				Computed: true,
+				MaxItems: 1,
 				ExactlyOneOf: []string{
 					"catalog_resource",
 					"data_location",
 					"database",
+					"lf_tag",
+					"lf_tag_policy",
 					"table",
 					"table_with_columns",
 				},
@@ -93,55 +94,152 @@ func ResourcePermissions() *schema.Resource {
 					Schema: map[string]*schema.Schema{
 						"catalog_id": {
 							Type:         schema.TypeString,
-							Computed:     true,
-							ForceNew:     true,
 							Optional:     true,
-							ValidateFunc: verify.ValidAccountID,
+							Computed:     true,
+							ValidateFunc: validateAwsAccountId,
 						},
 						"name": {
 							Type:     schema.TypeString,
-							ForceNew: true,
 							Required: true,
+						},
+					},
+				},
+			},
+			"lf_tag": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Computed: true,
+				MaxItems: 1,
+				ExactlyOneOf: []string{
+					"catalog_resource",
+					"data_location",
+					"database",
+					"lf_tag",
+					"lf_tag_policy",
+					"table",
+					"table_with_columns",
+				},
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"key": {
+							Type:         schema.TypeString,
+							Required:     true,
+							ForceNew:     true,
+							ValidateFunc: validation.StringLenBetween(1, 128),
+						},
+						"values": {
+							Type:     schema.TypeSet,
+							Required: true,
+							MinItems: 1,
+							MaxItems: 15,
+							Elem: &schema.Schema{
+								Type:         schema.TypeString,
+								ValidateFunc: validateLFTagValues(),
+							},
+							Set: schema.HashString,
+						},
+						"catalog_id": {
+							Type:     schema.TypeString,
+							ForceNew: true,
+							Optional: true,
+							Computed: true,
+						},
+					},
+				},
+			},
+			"lf_tag_policy": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Computed: true,
+				MaxItems: 1,
+				ExactlyOneOf: []string{
+					"catalog_resource",
+					"data_location",
+					"database",
+					"lf_tag",
+					"lf_tag_policy",
+					"table",
+					"table_with_columns",
+				},
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"catalog_id": {
+							Type:         schema.TypeString,
+							Optional:     true,
+							Computed:     true,
+							ValidateFunc: validateAwsAccountId,
+						},
+						"expression": {
+							Type:     schema.TypeList,
+							Required: true,
+							MinItems: 1,
+							MaxItems: 5,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"key": {
+										Type:         schema.TypeString,
+										Required:     true,
+										ValidateFunc: validation.StringLenBetween(1, 128),
+									},
+									"values": {
+										Type:     schema.TypeSet,
+										Required: true,
+										MinItems: 1,
+										MaxItems: 15,
+										Elem: &schema.Schema{
+											Type:         schema.TypeString,
+											ValidateFunc: validateLFTagValues(),
+										},
+										Set: schema.HashString,
+									},
+								},
+							},
+						},
+						"resource_type": {
+							Type:         schema.TypeString,
+							Required:     true,
+							ValidateFunc: validation.StringInSlice(lakeformation.ResourceType_Values(), false),
 						},
 					},
 				},
 			},
 			"permissions": {
 				Type:     schema.TypeList,
+				Required: true,
 				ForceNew: true,
 				MinItems: 1,
-				Required: true,
 				Elem: &schema.Schema{
 					Type:         schema.TypeString,
-					ValidateFunc: validation.StringInSlice(lakeformation.Permission_Values(), false),
+					ValidateFunc: validatePermissions(),
 				},
 			},
 			"permissions_with_grant_option": {
 				Type:     schema.TypeList,
-				Computed: true,
-				ForceNew: true,
 				Optional: true,
+				ForceNew: true,
+				Computed: true,
 				Elem: &schema.Schema{
 					Type:         schema.TypeString,
-					ValidateFunc: validation.StringInSlice(lakeformation.Permission_Values(), false),
+					ValidateFunc: validatePermissions(),
 				},
 			},
 			"principal": {
 				Type:         schema.TypeString,
-				ForceNew:     true,
 				Required:     true,
-				ValidateFunc: validPrincipal,
+				ForceNew:     true,
+				ValidateFunc: validatePrincipal,
 			},
 			"table": {
 				Type:     schema.TypeList,
-				Computed: true,
-				ForceNew: true,
-				MaxItems: 1,
 				Optional: true,
+				Computed: true,
+				MaxItems: 1,
 				ExactlyOneOf: []string{
 					"catalog_resource",
 					"data_location",
 					"database",
+					"lf_tag",
+					"lf_tag_policy",
 					"table",
 					"table_with_columns",
 				},
@@ -149,21 +247,18 @@ func ResourcePermissions() *schema.Resource {
 					Schema: map[string]*schema.Schema{
 						"catalog_id": {
 							Type:         schema.TypeString,
-							Computed:     true,
-							ForceNew:     true,
 							Optional:     true,
-							ValidateFunc: verify.ValidAccountID,
+							Computed:     true,
+							ValidateFunc: validateAwsAccountId,
 						},
 						"database_name": {
 							Type:     schema.TypeString,
-							ForceNew: true,
 							Required: true,
 						},
 						"name": {
 							Type:     schema.TypeString,
-							Computed: true,
-							ForceNew: true,
 							Optional: true,
+							Computed: true,
 							AtLeastOneOf: []string{
 								"table.0.name",
 								"table.0.wildcard",
@@ -171,9 +266,8 @@ func ResourcePermissions() *schema.Resource {
 						},
 						"wildcard": {
 							Type:     schema.TypeBool,
-							Default:  false,
-							ForceNew: true,
 							Optional: true,
+							Default:  false,
 							AtLeastOneOf: []string{
 								"table.0.name",
 								"table.0.wildcard",
@@ -184,14 +278,15 @@ func ResourcePermissions() *schema.Resource {
 			},
 			"table_with_columns": {
 				Type:     schema.TypeList,
-				Computed: true,
-				ForceNew: true,
-				MaxItems: 1,
 				Optional: true,
+				Computed: true,
+				MaxItems: 1,
 				ExactlyOneOf: []string{
 					"catalog_resource",
 					"data_location",
 					"database",
+					"lf_tag",
+					"lf_tag_policy",
 					"table",
 					"table_with_columns",
 				},
@@ -199,16 +294,13 @@ func ResourcePermissions() *schema.Resource {
 					Schema: map[string]*schema.Schema{
 						"catalog_id": {
 							Type:         schema.TypeString,
-							Computed:     true,
-							ForceNew:     true,
 							Optional:     true,
-							ValidateFunc: verify.ValidAccountID,
+							Computed:     true,
+							ValidateFunc: validateAwsAccountId,
 						},
 						"column_names": {
-							Type:     schema.TypeSet,
-							ForceNew: true,
+							Type:     schema.TypeList,
 							Optional: true,
-							Set:      schema.HashString,
 							Elem: &schema.Schema{
 								Type:         schema.TypeString,
 								ValidateFunc: validation.NoZeroValues,
@@ -220,14 +312,11 @@ func ResourcePermissions() *schema.Resource {
 						},
 						"database_name": {
 							Type:     schema.TypeString,
-							ForceNew: true,
 							Required: true,
 						},
 						"excluded_column_names": {
-							Type:     schema.TypeSet,
-							ForceNew: true,
+							Type:     schema.TypeList,
 							Optional: true,
-							Set:      schema.HashString,
 							Elem: &schema.Schema{
 								Type:         schema.TypeString,
 								ValidateFunc: validation.NoZeroValues,
@@ -235,14 +324,12 @@ func ResourcePermissions() *schema.Resource {
 						},
 						"name": {
 							Type:     schema.TypeString,
-							ForceNew: true,
 							Required: true,
 						},
 						"wildcard": {
 							Type:     schema.TypeBool,
-							Default:  false,
-							ForceNew: true,
 							Optional: true,
+							Default:  false,
 							AtLeastOneOf: []string{
 								"table_with_columns.0.column_names",
 								"table_with_columns.0.wildcard",
@@ -266,11 +353,11 @@ func ResourcePermissions() *schema.Resource {
 // For 2 & 3, some peeking at the config (i.e., d.Get()) is necessary to filter the permissions AWS
 // returns.
 
-func resourcePermissionsCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*conns.AWSClient).LakeFormationConn
+func resourceAwsLakeFormationPermissionsCreate(d *schema.ResourceData, meta interface{}) error {
+	conn := meta.(*AWSClient).lakeformationconn
 
 	input := &lakeformation.GrantPermissionsInput{
-		Permissions: flex.ExpandStringList(d.Get("permissions").([]interface{})),
+		Permissions: expandStringList(d.Get("permissions").([]interface{})),
 		Principal: &lakeformation.DataLakePrincipal{
 			DataLakePrincipalIdentifier: aws.String(d.Get("principal").(string)),
 		},
@@ -282,23 +369,31 @@ func resourcePermissionsCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if v, ok := d.GetOk("permissions_with_grant_option"); ok {
-		input.PermissionsWithGrantOption = flex.ExpandStringList(v.([]interface{}))
+		input.PermissionsWithGrantOption = expandStringList(v.([]interface{}))
 	}
 
 	if _, ok := d.GetOk("catalog_resource"); ok {
-		input.Resource.Catalog = ExpandCatalogResource()
+		input.Resource.Catalog = expandLakeFormationCatalogResource()
 	}
 
 	if v, ok := d.GetOk("data_location"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.DataLocation = ExpandDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.DataLocation = expandLakeFormationDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("database"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Database = ExpandDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Database = expandLakeFormationDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTag = expandLakeFormationLFTagKeyResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag_policy"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTagPolicy = expandLakeFormationLFTagPolicyResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("table"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Table = ExpandTableResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Table = expandLakeFormationTableResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("table_with_columns"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
@@ -306,7 +401,7 @@ func resourcePermissionsCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	var output *lakeformation.GrantPermissionsOutput
-	err := resource.Retry(tfiam.PropagationTimeout, func() *resource.RetryError {
+	err := resource.Retry(iamwaiter.PropagationTimeout, func() *resource.RetryError {
 		var err error
 		output, err = conn.GrantPermissions(input)
 		if err != nil {
@@ -343,13 +438,13 @@ func resourcePermissionsCreate(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("error creating Lake Formation Permissions: empty response")
 	}
 
-	d.SetId(fmt.Sprintf("%d", create.StringHashcode(input.String())))
+	d.SetId(fmt.Sprintf("%d", hashcode.String(input.String())))
 
-	return resourcePermissionsRead(d, meta)
+	return resourceAwsLakeFormationPermissionsRead(d, meta)
 }
 
-func resourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*conns.AWSClient).LakeFormationConn
+func resourceAwsLakeFormationPermissionsRead(d *schema.ResourceData, meta interface{}) error {
+	conn := meta.(*AWSClient).lakeformationconn
 
 	input := &lakeformation.ListPermissionsInput{
 		Principal: &lakeformation.DataLakePrincipal{
@@ -363,74 +458,91 @@ func resourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if _, ok := d.GetOk("catalog_resource"); ok {
-		input.Resource.Catalog = ExpandCatalogResource()
+		input.Resource.Catalog = expandLakeFormationCatalogResource()
 	}
 
 	if v, ok := d.GetOk("data_location"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.DataLocation = ExpandDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.DataLocation = expandLakeFormationDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("database"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Database = ExpandDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Database = expandLakeFormationDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTag = expandLakeFormationLFTagKeyResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag_policy"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTagPolicy = expandLakeFormationLFTagPolicyResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	tableType := ""
 
 	if v, ok := d.GetOk("table"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Table = ExpandTableResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Table = expandLakeFormationTableResource(v.([]interface{})[0].(map[string]interface{}))
 		tableType = TableTypeTable
 	}
 
 	if v, ok := d.GetOk("table_with_columns"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
 		// can't ListPermissions for TableWithColumns, so use Table instead
-		input.Resource.Table = ExpandTableWithColumnsResourceAsTable(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Table = expandLakeFormationTableWithColumnsResourceAsTable(v.([]interface{})[0].(map[string]interface{}))
 		tableType = TableTypeTableWithColumns
 	}
 
-	columnNames := make([]*string, 0)
-	excludedColumnNames := make([]*string, 0)
-	columnWildcard := false
+	log.Printf("[DEBUG] Reading Lake Formation permissions: %v", input)
+	var allPermissions []*lakeformation.PrincipalResourcePermissions
 
-	if tableType == TableTypeTableWithColumns {
-		if v, ok := d.GetOk("table_with_columns.0.wildcard"); ok {
-			columnWildcard = v.(bool)
-		}
+	err := resource.Retry(iamwaiter.PropagationTimeout, func() *resource.RetryError {
+		err := conn.ListPermissionsPages(input, func(resp *lakeformation.ListPermissionsOutput, lastPage bool) bool {
+			for _, permission := range resp.PrincipalResourcePermissions {
+				if permission == nil {
+					continue
+				}
 
-		if v, ok := d.GetOk("table_with_columns.0.column_names"); ok {
-			if v, ok := v.(*schema.Set); ok && v.Len() > 0 {
-				columnNames = flex.ExpandStringSet(v)
+				allPermissions = append(allPermissions, permission)
 			}
-		}
+			return !lastPage
+		})
 
-		if v, ok := d.GetOk("table_with_columns.0.excluded_column_names"); ok {
-			if v, ok := v.(*schema.Set); ok && v.Len() > 0 {
-				excludedColumnNames = flex.ExpandStringSet(v)
+		if err != nil {
+			if tfawserr.ErrMessageContains(err, lakeformation.ErrCodeInvalidInputException, "Invalid principal") {
+				return resource.RetryableError(err)
 			}
+			return resource.NonRetryableError(fmt.Errorf("error reading Lake Formation Permissions: %w", err))
 		}
+		return nil
+	})
+
+	if tfresource.TimedOut(err) {
+		err = conn.ListPermissionsPages(input, func(resp *lakeformation.ListPermissionsOutput, lastPage bool) bool {
+			for _, permission := range resp.PrincipalResourcePermissions {
+				if permission == nil {
+					continue
+				}
+
+				allPermissions = append(allPermissions, permission)
+			}
+			return !lastPage
+		})
 	}
 
-	log.Printf("[DEBUG] Reading Lake Formation permissions: %v", input)
+	if !d.IsNewResource() && tfawserr.ErrCodeEquals(err, lakeformation.ErrCodeEntityNotFoundException) {
+		log.Printf("[WARN] Resource Lake Formation permissions (%s) not found, removing from state", d.Id())
+		d.SetId("")
+		return nil
+	}
 
-	allPermissions, err := waitPermissionsReady(conn, input, tableType, columnNames, excludedColumnNames, columnWildcard)
+	if !d.IsNewResource() && tfawserr.ErrMessageContains(err, "AccessDeniedException", "Resource does not exist") {
+		log.Printf("[WARN] Resource Lake Formation permissions (%s) not found, removing from state: %s", d.Id(), err)
+		d.SetId("")
+		return nil
+	}
 
-	if !d.IsNewResource() {
-		if tfawserr.ErrCodeEquals(err, lakeformation.ErrCodeEntityNotFoundException) {
-			log.Printf("[WARN] Resource Lake Formation permissions (%s) not found, removing from state", d.Id())
-			d.SetId("")
-			return nil
-		}
-
-		if tfawserr.ErrMessageContains(err, "AccessDeniedException", "Resource does not exist") {
-			log.Printf("[WARN] Resource Lake Formation permissions (%s) not found, removing from state: %s", d.Id(), err)
-			d.SetId("")
-			return nil
-		}
-
-		if len(allPermissions) == 0 {
-			log.Printf("[WARN] Resource Lake Formation permissions (%s) not found, removing from state (0 permissions)", d.Id())
-			d.SetId("")
-			return nil
-		}
+	if !d.IsNewResource() && len(allPermissions) == 0 {
+		log.Printf("[WARN] Resource Lake Formation permissions (%s) not found, removing from state (0 permissions)", d.Id())
+		d.SetId("")
+		return nil
 	}
 
 	if err != nil {
@@ -438,15 +550,50 @@ func resourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// clean permissions = filter out permissions that do not pertain to this specific resource
-	cleanPermissions := FilterPermissions(input, tableType, columnNames, excludedColumnNames, columnWildcard, allPermissions)
+
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	if input.Resource.Catalog != nil {
+		cleanPermissions = filterLakeFormationCatalogPermissions(allPermissions)
+	}
+
+	if input.Resource.DataLocation != nil {
+		cleanPermissions = filterLakeFormationDataLocationPermissions(allPermissions)
+	}
+
+	if input.Resource.Database != nil {
+		cleanPermissions = filterLakeFormationDatabasePermissions(allPermissions)
+	}
+
+	if input.Resource.LFTag != nil {
+		cleanPermissions = filterLakeFormationLFTagPermissions(allPermissions)
+	}
+
+	if input.Resource.LFTagPolicy != nil {
+		cleanPermissions = filterLakeFormationLFTagPolicyPermissions(allPermissions)
+	}
+
+	if tableType == TableTypeTable {
+		cleanPermissions = filterLakeFormationTablePermissions(
+			aws.StringValue(input.Resource.Table.Name),
+			input.Resource.Table.TableWildcard != nil,
+			allPermissions,
+		)
+	}
+
+	if tableType == TableTypeTableWithColumns {
+		cleanPermissions = filterLakeFormationTableWithColumnsPermissions(
+			d.Get("table_with_columns.0.database_name").(string),
+			d.Get("table_with_columns.0.wildcard").(bool),
+			expandStringList(d.Get("table_with_columns.0.column_names").([]interface{})),
+			expandStringList(d.Get("table_with_columns.0.excluded_column_names").([]interface{})),
+			allPermissions,
+		)
+	}
 
 	if len(cleanPermissions) == 0 {
-		log.Printf("[WARN] No Lake Formation permissions (%s) found", d.Id())
-		d.Set("catalog_resource", false)
-		d.Set("data_location", nil)
-		d.Set("database", nil)
-		d.Set("table_with_columns", nil)
-		d.Set("table", nil)
+		log.Printf("[WARN] Resource Lake Formation permissions (%s) not found, removing from state", d.Id())
+		d.SetId("")
 		return nil
 	}
 
@@ -460,8 +607,6 @@ func resourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 
 	if cleanPermissions[0].Resource.Catalog != nil {
 		d.Set("catalog_resource", true)
-	} else {
-		d.Set("catalog_resource", false)
 	}
 
 	if cleanPermissions[0].Resource.DataLocation != nil {
@@ -480,23 +625,27 @@ func resourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 		d.Set("database", nil)
 	}
 
+	if cleanPermissions[0].Resource.LFTag != nil {
+		if err := d.Set("lf_tag", []interface{}{flattenLakeFormationLFTagKeyResource(cleanPermissions[0].Resource.LFTag)}); err != nil {
+			return fmt.Errorf("error setting LF-Tag: %w", err)
+		}
+	} else {
+		d.Set("lf_tag", nil)
+	}
+
+	if cleanPermissions[0].Resource.LFTagPolicy != nil {
+		if err := d.Set("lf_tag_policy", []interface{}{flattenLakeFormationLFTagPolicyResource(cleanPermissions[0].Resource.LFTagPolicy)}); err != nil {
+			return fmt.Errorf("error setting LF-Tag policy: %w", err)
+		}
+	} else {
+		d.Set("lf_tag_policy", nil)
+	}
+
 	tableSet := false
 
 	if v, ok := d.GetOk("table"); ok && len(v.([]interface{})) > 0 {
 		// since perm list could include TableWithColumns, get the right one
 		for _, perm := range cleanPermissions {
-			if perm.Resource == nil {
-				continue
-			}
-
-			if perm.Resource.TableWithColumns != nil && perm.Resource.TableWithColumns.ColumnWildcard != nil {
-				if err := d.Set("table", []interface{}{flattenLakeFormationTableWithColumnsResourceAsTable(perm.Resource.TableWithColumns)}); err != nil {
-					return fmt.Errorf("error setting table: %w", err)
-				}
-				tableSet = true
-				break
-			}
-
 			if perm.Resource.Table != nil {
 				if err := d.Set("table", []interface{}{flattenLakeFormationTableResource(perm.Resource.Table)}); err != nil {
 					return fmt.Errorf("error setting table: %w", err)
@@ -533,12 +682,11 @@ func resourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
-func resourcePermissionsDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*conns.AWSClient).LakeFormationConn
+func resourceAwsLakeFormationPermissionsDelete(d *schema.ResourceData, meta interface{}) error {
+	conn := meta.(*AWSClient).lakeformationconn
 
 	input := &lakeformation.RevokePermissionsInput{
-		Permissions:                flex.ExpandStringList(d.Get("permissions").([]interface{})),
-		PermissionsWithGrantOption: flex.ExpandStringList(d.Get("permissions_with_grant_option").([]interface{})),
+		Permissions: expandStringList(d.Get("permissions").([]interface{})),
 		Principal: &lakeformation.DataLakePrincipal{
 			DataLakePrincipalIdentifier: aws.String(d.Get("principal").(string)),
 		},
@@ -549,20 +697,32 @@ func resourcePermissionsDelete(d *schema.ResourceData, meta interface{}) error {
 		input.CatalogId = aws.String(v.(string))
 	}
 
+	if v, ok := d.GetOk("permissions_with_grant_option"); ok {
+		input.PermissionsWithGrantOption = expandStringList(v.([]interface{}))
+	}
+
 	if _, ok := d.GetOk("catalog_resource"); ok {
-		input.Resource.Catalog = ExpandCatalogResource()
+		input.Resource.Catalog = expandLakeFormationCatalogResource()
 	}
 
 	if v, ok := d.GetOk("data_location"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.DataLocation = ExpandDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.DataLocation = expandLakeFormationDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("database"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Database = ExpandDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Database = expandLakeFormationDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTag = expandLakeFormationLFTagKeyResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag_policy"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTagPolicy = expandLakeFormationLFTagPolicyResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("table"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Table = ExpandTableResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Table = expandLakeFormationTableResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("table_with_columns"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
@@ -575,7 +735,7 @@ func resourcePermissionsDelete(d *schema.ResourceData, meta interface{}) error {
 		return nil
 	}
 
-	err := resource.Retry(permissionsDeleteRetryTimeout, func() *resource.RetryError {
+	err := resource.Retry(2*time.Minute, func() *resource.RetryError {
 		var err error
 		_, err = conn.RevokePermissions(input)
 		if err != nil {
@@ -598,45 +758,6 @@ func resourcePermissionsDelete(d *schema.ResourceData, meta interface{}) error {
 		_, err = conn.RevokePermissions(input)
 	}
 
-	if tfawserr.ErrMessageContains(err, lakeformation.ErrCodeInvalidInputException, "No permissions revoked. Grantee") {
-		return nil
-	}
-
-	if tfawserr.ErrMessageContains(err, lakeformation.ErrCodeInvalidInputException, "cannot grant/revoke permission on non-existent column") {
-		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("unable to revoke LakeFormation Permissions (input: %v): %w", input, err)
-	}
-
-	// Attempted to add a waiter here to wait for delete to complete. However, ListPermissions() returns
-	// permissions, at least for catalog/CREATE_DATABASE permission, even if they do not exist. That makes
-	// knowing when the delete is complete impossible. Instead, we'll retry until we get the right error.
-
-	// Knowing when the delete is complete is complicated:
-	// You can't just wait until permissions = 0 because there could be many other unrelated permissions
-	// on the resource and filtering is non-trivial for table with columns.
-
-	err = resource.Retry(permissionsDeleteRetryTimeout, func() *resource.RetryError {
-		var err error
-		_, err = conn.RevokePermissions(input)
-
-		if !tfawserr.ErrMessageContains(err, lakeformation.ErrCodeInvalidInputException, "No permissions revoked. Grantee has no") {
-			return resource.RetryableError(err)
-		}
-
-		return nil
-	})
-
-	if tfresource.TimedOut(err) {
-		_, err = conn.RevokePermissions(input)
-	}
-
-	if tfawserr.ErrMessageContains(err, lakeformation.ErrCodeInvalidInputException, "No permissions revoked. Grantee") {
-		return nil
-	}
-
 	if err != nil {
 		return fmt.Errorf("unable to revoke LakeFormation Permissions (input: %v): %w", input, err)
 	}
@@ -644,11 +765,151 @@ func resourcePermissionsDelete(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
-func ExpandCatalogResource() *lakeformation.CatalogResource {
+const (
+	TableNameAllTables        = "ALL_TABLES"
+	TableTypeTable            = "Table"
+	TableTypeTableWithColumns = "TableWithColumns"
+)
+
+func filterLakeFormationTablePermissions(tableName string, tableWildcard bool, allPermissions []*lakeformation.PrincipalResourcePermissions) []*lakeformation.PrincipalResourcePermissions {
+	// CREATE PERMS = ALL, ALTER, DELETE, DESCRIBE, DROP, INSERT, SELECT	on Table, Name = (Table Name)
+	//		LIST PERMS = ALL, ALTER, DELETE, DESCRIBE, DROP, INSERT 		on Table, Name = (Table Name)
+	//		LIST PERMS = SELECT 											on TableWithColumns, Name = (Table Name), ColumnWildcard
+
+	// CREATE PERMS = ALL, ALTER, DELETE, DESCRIBE, DROP, INSERT, SELECT	on Table, TableWildcard
+	//		LIST PERMS = ALL, ALTER, DELETE, DESCRIBE, DROP, INSERT 		on Table, TableWildcard, Name = ALL_TABLES
+	//		LIST PERMS = SELECT 											on TableWithColumns, Name = ALL_TABLES, ColumnWildcard
+
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	for _, perm := range allPermissions {
+		if perm.Resource.TableWithColumns != nil && perm.Resource.TableWithColumns.ColumnWildcard != nil {
+			if aws.StringValue(perm.Resource.TableWithColumns.Name) == tableName || (tableWildcard && aws.StringValue(perm.Resource.TableWithColumns.Name) == TableNameAllTables) {
+				if len(perm.Permissions) > 0 && aws.StringValue(perm.Permissions[0]) == lakeformation.PermissionSelect {
+					cleanPermissions = append(cleanPermissions, perm)
+					continue
+				}
+
+				if len(perm.PermissionsWithGrantOption) > 0 && aws.StringValue(perm.PermissionsWithGrantOption[0]) == lakeformation.PermissionSelect {
+					cleanPermissions = append(cleanPermissions, perm)
+					continue
+				}
+			}
+		}
+
+		if perm.Resource.Table != nil {
+			if aws.StringValue(perm.Resource.Table.Name) == tableName {
+				cleanPermissions = append(cleanPermissions, perm)
+				continue
+			}
+
+			if perm.Resource.Table.TableWildcard != nil && tableWildcard {
+				cleanPermissions = append(cleanPermissions, perm)
+				continue
+			}
+		}
+		continue
+	}
+
+	return cleanPermissions
+}
+
+func filterLakeFormationTableWithColumnsPermissions(tableName string, columnWildcard bool, columnNames []*string, excludedColumnNames []*string, allPermissions []*lakeformation.PrincipalResourcePermissions) []*lakeformation.PrincipalResourcePermissions {
+	// CREATE PERMS = ALL, ALTER, DELETE, DESCRIBE, DROP, INSERT, SELECT	on TableWithColumns, Name = (Table Name), ColumnWildcard
+	//		LIST PERMS = ALL, ALTER, DELETE, DESCRIBE, DROP, INSERT 		on Table, Name = (Table Name)
+	//		LIST PERMS = SELECT 											on TableWithColumns, Name = (Table Name), ColumnWildcard
+
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	for _, perm := range allPermissions {
+		if perm.Resource.TableWithColumns != nil && perm.Resource.TableWithColumns.ColumnNames != nil {
+			if StringSlicesEqualIgnoreOrder(perm.Resource.TableWithColumns.ColumnNames, columnNames) {
+				cleanPermissions = append(cleanPermissions, perm)
+				continue
+			}
+		}
+
+		if perm.Resource.TableWithColumns != nil && perm.Resource.TableWithColumns.ColumnWildcard != nil && (columnWildcard || len(excludedColumnNames) > 0) {
+			if (perm.Resource.TableWithColumns.ColumnWildcard.ExcludedColumnNames == nil && len(excludedColumnNames) == 0) || StringSlicesEqualIgnoreOrder(perm.Resource.TableWithColumns.ColumnWildcard.ExcludedColumnNames, excludedColumnNames) {
+				cleanPermissions = append(cleanPermissions, perm)
+				continue
+			}
+		}
+
+		if perm.Resource.Table != nil && aws.StringValue(perm.Resource.Table.Name) == tableName {
+			cleanPermissions = append(cleanPermissions, perm)
+			continue
+		}
+	}
+
+	return cleanPermissions
+}
+
+func filterLakeFormationCatalogPermissions(allPermissions []*lakeformation.PrincipalResourcePermissions) []*lakeformation.PrincipalResourcePermissions {
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	for _, perm := range allPermissions {
+		if perm.Resource.Catalog != nil {
+			cleanPermissions = append(cleanPermissions, perm)
+		}
+	}
+
+	return cleanPermissions
+}
+
+func filterLakeFormationDataLocationPermissions(allPermissions []*lakeformation.PrincipalResourcePermissions) []*lakeformation.PrincipalResourcePermissions {
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	for _, perm := range allPermissions {
+		if perm.Resource.DataLocation != nil {
+			cleanPermissions = append(cleanPermissions, perm)
+		}
+	}
+
+	return cleanPermissions
+}
+
+func filterLakeFormationDatabasePermissions(allPermissions []*lakeformation.PrincipalResourcePermissions) []*lakeformation.PrincipalResourcePermissions {
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	for _, perm := range allPermissions {
+		if perm.Resource.Database != nil {
+			cleanPermissions = append(cleanPermissions, perm)
+		}
+	}
+
+	return cleanPermissions
+}
+
+func filterLakeFormationLFTagPermissions(allPermissions []*lakeformation.PrincipalResourcePermissions) []*lakeformation.PrincipalResourcePermissions {
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	for _, perm := range allPermissions {
+		if perm.Resource.LFTag != nil {
+			cleanPermissions = append(cleanPermissions, perm)
+		}
+	}
+
+	return cleanPermissions
+}
+
+func filterLakeFormationLFTagPolicyPermissions(allPermissions []*lakeformation.PrincipalResourcePermissions) []*lakeformation.PrincipalResourcePermissions {
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	for _, perm := range allPermissions {
+		if perm.Resource.LFTagPolicy != nil {
+			cleanPermissions = append(cleanPermissions, perm)
+		}
+	}
+
+	return cleanPermissions
+}
+
+func expandLakeFormationCatalogResource() *lakeformation.CatalogResource {
 	return &lakeformation.CatalogResource{}
 }
 
-func ExpandDataLocationResource(tfMap map[string]interface{}) *lakeformation.DataLocationResource {
+func expandLakeFormationDataLocationResource(tfMap map[string]interface{}) *lakeformation.DataLocationResource {
 	if tfMap == nil {
 		return nil
 	}
@@ -684,7 +945,7 @@ func flattenLakeFormationDataLocationResource(apiObject *lakeformation.DataLocat
 	return tfMap
 }
 
-func ExpandDatabaseResource(tfMap map[string]interface{}) *lakeformation.DatabaseResource {
+func expandLakeFormationDatabaseResource(tfMap map[string]interface{}) *lakeformation.DatabaseResource {
 	if tfMap == nil {
 		return nil
 	}
@@ -720,7 +981,132 @@ func flattenLakeFormationDatabaseResource(apiObject *lakeformation.DatabaseResou
 	return tfMap
 }
 
-func ExpandTableResource(tfMap map[string]interface{}) *lakeformation.TableResource {
+func expandLakeFormationLFTagPolicyResource(tfMap map[string]interface{}) *lakeformation.LFTagPolicyResource {
+	if tfMap == nil {
+		return nil
+	}
+
+	apiObject := &lakeformation.LFTagPolicyResource{}
+
+	if v, ok := tfMap["catalog_id"].(string); ok && v != "" {
+		apiObject.CatalogId = aws.String(v)
+	}
+
+	if v, ok := tfMap["expression"]; ok && v != nil {
+		apiObject.Expression = expandLakeFormationLFTagExpression(v.([]interface{}))
+	}
+
+	if v, ok := tfMap["resource_type"].(string); ok && v != "" {
+		apiObject.ResourceType = aws.String(v)
+	}
+
+	return apiObject
+}
+
+func expandLakeFormationLFTagExpression(expression []interface{}) []*lakeformation.LFTag {
+	tagSlice := []*lakeformation.LFTag{}
+	for _, element := range expression {
+		elementMap := element.(map[string]interface{})
+
+		tag := &lakeformation.LFTag{
+			TagKey:    aws.String(elementMap["key"].(string)),
+			TagValues: expandStringSet(elementMap["values"].(*schema.Set)),
+		}
+
+		tagSlice = append(tagSlice, tag)
+	}
+
+	return tagSlice
+}
+
+func flattenLakeFormationLFTagPolicyResource(apiObject *lakeformation.LFTagPolicyResource) map[string]interface{} {
+	if apiObject == nil {
+		return nil
+	}
+
+	tfMap := map[string]interface{}{}
+
+	if v := apiObject.CatalogId; v != nil {
+		tfMap["catalog_id"] = aws.StringValue(v)
+	}
+
+	if v := apiObject.Expression; v != nil {
+		tfMap["expression"] = flattenLakeFormationLFTagExpression(v)
+	}
+
+	if v := apiObject.ResourceType; v != nil {
+		tfMap["resource_type"] = aws.StringValue(v)
+	}
+
+	return tfMap
+}
+
+func flattenLakeFormationLFTagExpression(ts []*lakeformation.LFTag) []map[string]interface{} {
+	tagSlice := make([]map[string]interface{}, len(ts))
+	if len(ts) > 0 {
+		for i, t := range ts {
+			tag := make(map[string]interface{})
+
+			if v := aws.StringValue(t.TagKey); v != "" {
+				tag["key"] = v
+			}
+
+			if v := flattenStringList(t.TagValues); v != nil {
+				tag["values"] = v
+			}
+
+			tagSlice[i] = tag
+		}
+	}
+
+	return tagSlice
+}
+
+func expandLakeFormationLFTagKeyResource(tfMap map[string]interface{}) *lakeformation.LFTagKeyResource {
+	if tfMap == nil {
+		return nil
+	}
+
+	apiObject := &lakeformation.LFTagKeyResource{}
+
+	if v, ok := tfMap["catalog_id"].(string); ok && v != "" {
+		apiObject.CatalogId = aws.String(v)
+	}
+
+	if v, ok := tfMap["key"].(string); ok && v != "" {
+		apiObject.TagKey = aws.String(v)
+	}
+
+	if v, ok := tfMap["values"].(*schema.Set); ok && v != nil {
+		apiObject.TagValues = expandStringSet(v)
+	}
+
+	return apiObject
+}
+
+func flattenLakeFormationLFTagKeyResource(apiObject *lakeformation.LFTagKeyResource) map[string]interface{} {
+	if apiObject == nil {
+		return nil
+	}
+
+	tfMap := map[string]interface{}{}
+
+	if v := apiObject.CatalogId; v != nil {
+		tfMap["catalog_id"] = aws.StringValue(v)
+	}
+
+	if v := apiObject.TagKey; v != nil {
+		tfMap["key"] = aws.StringValue(v)
+	}
+
+	if v := apiObject.TagValues; v != nil {
+		tfMap["values"] = flattenStringSet(v)
+	}
+
+	return tfMap
+}
+
+func expandLakeFormationTableResource(tfMap map[string]interface{}) *lakeformation.TableResource {
 	if tfMap == nil {
 		return nil
 	}
@@ -746,7 +1132,7 @@ func ExpandTableResource(tfMap map[string]interface{}) *lakeformation.TableResou
 	return apiObject
 }
 
-func ExpandTableWithColumnsResourceAsTable(tfMap map[string]interface{}) *lakeformation.TableResource {
+func expandLakeFormationTableWithColumnsResourceAsTable(tfMap map[string]interface{}) *lakeformation.TableResource {
 	if tfMap == nil {
 		return nil
 	}
@@ -807,21 +1193,17 @@ func expandLakeFormationTableWithColumnsResource(tfMap map[string]interface{}) *
 		apiObject.CatalogId = aws.String(v)
 	}
 
-	if v, ok := tfMap["column_names"]; ok {
-		if v, ok := v.(*schema.Set); ok && v.Len() > 0 {
-			apiObject.ColumnNames = flex.ExpandStringSet(v)
-		}
+	if v, ok := tfMap["column_names"]; ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		apiObject.ColumnNames = expandStringList(v.([]interface{}))
 	}
 
 	if v, ok := tfMap["database_name"].(string); ok && v != "" {
 		apiObject.DatabaseName = aws.String(v)
 	}
 
-	if v, ok := tfMap["excluded_column_names"]; ok {
-		if v, ok := v.(*schema.Set); ok && v.Len() > 0 {
-			apiObject.ColumnWildcard = &lakeformation.ColumnWildcard{
-				ExcludedColumnNames: flex.ExpandStringSet(v),
-			}
+	if v, ok := tfMap["excluded_column_names"]; ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		apiObject.ColumnWildcard = &lakeformation.ColumnWildcard{
+			ExcludedColumnNames: expandStringList(v.([]interface{})),
 		}
 	}
 
@@ -847,7 +1229,7 @@ func flattenLakeFormationTableWithColumnsResource(apiObject *lakeformation.Table
 		tfMap["catalog_id"] = aws.StringValue(v)
 	}
 
-	tfMap["column_names"] = flex.FlattenStringSet(apiObject.ColumnNames)
+	tfMap["column_names"] = flattenStringList(apiObject.ColumnNames)
 
 	if v := apiObject.DatabaseName; v != nil {
 		tfMap["database_name"] = aws.StringValue(v)
@@ -855,37 +1237,10 @@ func flattenLakeFormationTableWithColumnsResource(apiObject *lakeformation.Table
 
 	if v := apiObject.ColumnWildcard; v != nil {
 		tfMap["wildcard"] = true
-		tfMap["excluded_column_names"] = flex.FlattenStringSet(v.ExcludedColumnNames)
+		tfMap["excluded_column_names"] = flattenStringList(v.ExcludedColumnNames)
 	}
 
 	if v := apiObject.Name; v != nil {
-		tfMap["name"] = aws.StringValue(v)
-	}
-
-	return tfMap
-}
-
-// This only happens in very specific situations:
-// (Select) TWC + ColumnWildcard              = (Select) Table
-// (Select) TWC + ColumnWildcard + ALL_TABLES = (Select) Table + TableWildcard
-func flattenLakeFormationTableWithColumnsResourceAsTable(apiObject *lakeformation.TableWithColumnsResource) map[string]interface{} {
-	if apiObject == nil {
-		return nil
-	}
-
-	tfMap := map[string]interface{}{}
-
-	if v := apiObject.CatalogId; v != nil {
-		tfMap["catalog_id"] = aws.StringValue(v)
-	}
-
-	if v := apiObject.DatabaseName; v != nil {
-		tfMap["database_name"] = aws.StringValue(v)
-	}
-
-	if v := apiObject.Name; v != nil && aws.StringValue(v) == TableNameAllTables && apiObject.ColumnWildcard != nil {
-		tfMap["wildcard"] = true
-	} else if v := apiObject.Name; v != nil {
 		tfMap["name"] = aws.StringValue(v)
 	}
 
@@ -905,6 +1260,8 @@ func flattenLakeFormationPermissions(apiObjects []*lakeformation.PrincipalResour
 		}
 	}
 
+	sort.Strings(tfList)
+
 	return tfList
 }
 
@@ -921,5 +1278,24 @@ func flattenLakeFormationGrantPermissions(apiObjects []*lakeformation.PrincipalR
 		}
 	}
 
+	sort.Strings(tfList)
+
 	return tfList
+}
+
+// lakeformation.Permission_Values() enum has tag permissions in the format ASSOCIATE_TAG, DESCRIBE_TAG, which is not valid for the API
+func validatePermissions() schema.SchemaValidateFunc {
+	return validation.StringInSlice([]string{
+		"ALL",
+		"ALTER",
+		"ASSOCIATE",
+		"CREATE_DATABASE",
+		"CREATE_TABLE",
+		"DATA_LOCATION_ACCESS",
+		"DELETE",
+		"DESCRIBE",
+		"DROP",
+		"INSERT",
+		"SELECT",
+	}, true)
 }

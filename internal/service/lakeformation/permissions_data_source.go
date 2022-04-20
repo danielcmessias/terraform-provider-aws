@@ -1,4 +1,4 @@
-package lakeformation
+package aws
 
 import (
 	"fmt"
@@ -6,23 +6,24 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/lakeformation"
+	"github.com/hashicorp/aws-sdk-go-base/tfawserr"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/hashicorp/terraform-provider-aws/internal/conns"
-	"github.com/hashicorp/terraform-provider-aws/internal/create"
-	"github.com/hashicorp/terraform-provider-aws/internal/flex"
-	"github.com/hashicorp/terraform-provider-aws/internal/verify"
+	"github.com/terraform-providers/terraform-provider-aws/aws/internal/hashcode"
+	iamwaiter "github.com/terraform-providers/terraform-provider-aws/aws/internal/service/iam/waiter"
+	"github.com/terraform-providers/terraform-provider-aws/aws/internal/tfresource"
 )
 
-func DataSourcePermissions() *schema.Resource {
+func dataSourceAwsLakeFormationPermissions() *schema.Resource {
 	return &schema.Resource{
-		Read: dataSourcePermissionsRead,
+		Read: dataSourceAwsLakeFormationPermissionsRead,
 
 		Schema: map[string]*schema.Schema{
 			"catalog_id": {
 				Type:         schema.TypeString,
 				Optional:     true,
-				ValidateFunc: verify.ValidAccountID,
+				ValidateFunc: validateAwsAccountId,
 			},
 			"catalog_resource": {
 				Type:     schema.TypeBool,
@@ -39,13 +40,13 @@ func DataSourcePermissions() *schema.Resource {
 						"arn": {
 							Type:         schema.TypeString,
 							Required:     true,
-							ValidateFunc: verify.ValidARN,
+							ValidateFunc: validateArn,
 						},
 						"catalog_id": {
 							Type:         schema.TypeString,
 							Optional:     true,
 							Computed:     true,
-							ValidateFunc: verify.ValidAccountID,
+							ValidateFunc: validateAwsAccountId,
 						},
 					},
 				},
@@ -61,7 +62,7 @@ func DataSourcePermissions() *schema.Resource {
 							Type:         schema.TypeString,
 							Optional:     true,
 							Computed:     true,
-							ValidateFunc: verify.ValidAccountID,
+							ValidateFunc: validateAwsAccountId,
 						},
 						"name": {
 							Type:     schema.TypeString,
@@ -84,10 +85,88 @@ func DataSourcePermissions() *schema.Resource {
 					Type: schema.TypeString,
 				},
 			},
+			"lf_tag": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Computed: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"key": {
+							Type:         schema.TypeString,
+							Required:     true,
+							ValidateFunc: validation.StringLenBetween(1, 128),
+						},
+						"values": {
+							Type:     schema.TypeSet,
+							Required: true,
+							MinItems: 1,
+							MaxItems: 15,
+							Elem: &schema.Schema{
+								Type:         schema.TypeString,
+								ValidateFunc: validateLFTagValues(),
+							},
+							Set: schema.HashString,
+						},
+						"catalog_id": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+						},
+					},
+				},
+			},
+			"lf_tag_policy": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Computed: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"catalog_id": {
+							Type:         schema.TypeString,
+							Optional:     true,
+							Computed:     true,
+							ValidateFunc: validateAwsAccountId,
+						},
+						"expression": {
+							Type:     schema.TypeList,
+							Required: true,
+							MinItems: 1,
+							MaxItems: 5,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"key": {
+										Type:         schema.TypeString,
+										Required:     true,
+										ValidateFunc: validation.StringLenBetween(1, 128),
+									},
+									"values": {
+										Type:     schema.TypeSet,
+										Required: true,
+										MinItems: 1,
+										MaxItems: 15,
+										Elem: &schema.Schema{
+											Type:         schema.TypeString,
+											ValidateFunc: validateLFTagValues(),
+										},
+										Set: schema.HashString,
+									},
+								},
+							},
+						},
+						"resource_type": {
+							Type:         schema.TypeString,
+							Required:     true,
+							ValidateFunc: validation.StringInSlice(lakeformation.ResourceType_Values(), false),
+						},
+					},
+				},
+			},
 			"principal": {
 				Type:         schema.TypeString,
 				Required:     true,
-				ValidateFunc: validPrincipal,
+				ValidateFunc: validatePrincipal,
 			},
 			"table": {
 				Type:     schema.TypeList,
@@ -100,7 +179,7 @@ func DataSourcePermissions() *schema.Resource {
 							Type:         schema.TypeString,
 							Optional:     true,
 							Computed:     true,
-							ValidateFunc: verify.ValidAccountID,
+							ValidateFunc: validateAwsAccountId,
 						},
 						"database_name": {
 							Type:     schema.TypeString,
@@ -130,12 +209,11 @@ func DataSourcePermissions() *schema.Resource {
 							Type:         schema.TypeString,
 							Optional:     true,
 							Computed:     true,
-							ValidateFunc: verify.ValidAccountID,
+							ValidateFunc: validateAwsAccountId,
 						},
 						"column_names": {
-							Type:     schema.TypeSet,
+							Type:     schema.TypeList,
 							Optional: true,
-							Set:      schema.HashString,
 							Elem: &schema.Schema{
 								Type:         schema.TypeString,
 								ValidateFunc: validation.NoZeroValues,
@@ -146,9 +224,8 @@ func DataSourcePermissions() *schema.Resource {
 							Required: true,
 						},
 						"excluded_column_names": {
-							Type:     schema.TypeSet,
+							Type:     schema.TypeList,
 							Optional: true,
-							Set:      schema.HashString,
 							Elem: &schema.Schema{
 								Type:         schema.TypeString,
 								ValidateFunc: validation.NoZeroValues,
@@ -169,8 +246,8 @@ func DataSourcePermissions() *schema.Resource {
 	}
 }
 
-func dataSourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*conns.AWSClient).LakeFormationConn
+func dataSourceAwsLakeFormationPermissionsRead(d *schema.ResourceData, meta interface{}) error {
+	conn := meta.(*AWSClient).lakeformationconn
 
 	input := &lakeformation.ListPermissionsInput{
 		Principal: &lakeformation.DataLakePrincipal{
@@ -184,64 +261,120 @@ func dataSourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if _, ok := d.GetOk("catalog_resource"); ok {
-		input.Resource.Catalog = ExpandCatalogResource()
+		input.Resource.Catalog = expandLakeFormationCatalogResource()
 	}
 
 	if v, ok := d.GetOk("data_location"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.DataLocation = ExpandDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.DataLocation = expandLakeFormationDataLocationResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	if v, ok := d.GetOk("database"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Database = ExpandDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Database = expandLakeFormationDatabaseResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTag = expandLakeFormationLFTagKeyResource(v.([]interface{})[0].(map[string]interface{}))
+	}
+
+	if v, ok := d.GetOk("lf_tag_policy"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
+		input.Resource.LFTagPolicy = expandLakeFormationLFTagPolicyResource(v.([]interface{})[0].(map[string]interface{}))
 	}
 
 	tableType := ""
 
 	if v, ok := d.GetOk("table"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
-		input.Resource.Table = ExpandTableResource(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Table = expandLakeFormationTableResource(v.([]interface{})[0].(map[string]interface{}))
 		tableType = TableTypeTable
 	}
 
 	if v, ok := d.GetOk("table_with_columns"); ok && len(v.([]interface{})) > 0 && v.([]interface{})[0] != nil {
 		// can't ListPermissions for TableWithColumns, so use Table instead
-		input.Resource.Table = ExpandTableWithColumnsResourceAsTable(v.([]interface{})[0].(map[string]interface{}))
+		input.Resource.Table = expandLakeFormationTableWithColumnsResourceAsTable(v.([]interface{})[0].(map[string]interface{}))
 		tableType = TableTypeTableWithColumns
 	}
 
-	columnNames := make([]*string, 0)
-	excludedColumnNames := make([]*string, 0)
-	columnWildcard := false
+	log.Printf("[DEBUG] Reading Lake Formation permissions: %v", input)
+	var allPermissions []*lakeformation.PrincipalResourcePermissions
 
-	if tableType == TableTypeTableWithColumns {
-		if v, ok := d.GetOk("table_with_columns.0.wildcard"); ok {
-			columnWildcard = v.(bool)
-		}
+	err := resource.Retry(iamwaiter.PropagationTimeout, func() *resource.RetryError {
+		err := conn.ListPermissionsPages(input, func(resp *lakeformation.ListPermissionsOutput, lastPage bool) bool {
+			for _, permission := range resp.PrincipalResourcePermissions {
+				if permission == nil {
+					continue
+				}
 
-		if v, ok := d.GetOk("table_with_columns.0.column_names"); ok {
-			if v, ok := v.(*schema.Set); ok && v.Len() > 0 {
-				columnNames = flex.ExpandStringSet(v)
+				allPermissions = append(allPermissions, permission)
 			}
-		}
+			return !lastPage
+		})
 
-		if v, ok := d.GetOk("table_with_columns.0.excluded_column_names"); ok {
-			if v, ok := v.(*schema.Set); ok && v.Len() > 0 {
-				excludedColumnNames = flex.ExpandStringSet(v)
+		if err != nil {
+			if tfawserr.ErrMessageContains(err, lakeformation.ErrCodeInvalidInputException, "Invalid principal") {
+				return resource.RetryableError(err)
 			}
+			return resource.NonRetryableError(fmt.Errorf("error reading Lake Formation Permissions: %w", err))
 		}
+		return nil
+	})
+
+	if tfresource.TimedOut(err) {
+		err = conn.ListPermissionsPages(input, func(resp *lakeformation.ListPermissionsOutput, lastPage bool) bool {
+			for _, permission := range resp.PrincipalResourcePermissions {
+				if permission == nil {
+					continue
+				}
+
+				allPermissions = append(allPermissions, permission)
+			}
+			return !lastPage
+		})
 	}
 
-	log.Printf("[DEBUG] Reading Lake Formation permissions: %v", input)
-
-	allPermissions, err := waitPermissionsReady(conn, input, tableType, columnNames, excludedColumnNames, columnWildcard)
-
-	d.SetId(fmt.Sprintf("%d", create.StringHashcode(input.String())))
+	d.SetId(fmt.Sprintf("%d", hashcode.String(input.String())))
 
 	if err != nil {
 		return fmt.Errorf("error reading Lake Formation permissions: %w", err)
 	}
 
-	// clean permissions = filter out permissions that do not pertain to this specific resource
-	cleanPermissions := FilterPermissions(input, tableType, columnNames, excludedColumnNames, columnWildcard, allPermissions)
+	var cleanPermissions []*lakeformation.PrincipalResourcePermissions
+
+	if input.Resource.Catalog != nil {
+		cleanPermissions = filterLakeFormationCatalogPermissions(allPermissions)
+	}
+
+	if input.Resource.DataLocation != nil {
+		cleanPermissions = filterLakeFormationDataLocationPermissions(allPermissions)
+	}
+
+	if input.Resource.Database != nil {
+		cleanPermissions = filterLakeFormationDatabasePermissions(allPermissions)
+	}
+
+	if input.Resource.LFTag != nil {
+		cleanPermissions = filterLakeFormationLFTagPermissions(allPermissions)
+	}
+
+	if input.Resource.LFTagPolicy != nil {
+		cleanPermissions = filterLakeFormationLFTagPolicyPermissions(allPermissions)
+	}
+
+	if tableType == TableTypeTable {
+		cleanPermissions = filterLakeFormationTablePermissions(
+			aws.StringValue(input.Resource.Table.Name),
+			input.Resource.Table.TableWildcard != nil,
+			allPermissions,
+		)
+	}
+
+	if tableType == TableTypeTableWithColumns {
+		cleanPermissions = filterLakeFormationTableWithColumnsPermissions(
+			d.Get("table_with_columns.0.database_name").(string),
+			d.Get("table_with_columns.0.wildcard").(bool),
+			expandStringList(d.Get("table_with_columns.0.column_names").([]interface{})),
+			expandStringList(d.Get("table_with_columns.0.excluded_column_names").([]interface{})),
+			allPermissions,
+		)
+	}
 
 	if len(cleanPermissions) != len(allPermissions) {
 		log.Printf("[INFO] Resource Lake Formation clean permissions (%d) and all permissions (%d) have different lengths (this is not necessarily a problem): %s", len(cleanPermissions), len(allPermissions), d.Id())
@@ -253,8 +386,6 @@ func dataSourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 
 	if cleanPermissions[0].Resource.Catalog != nil {
 		d.Set("catalog_resource", true)
-	} else {
-		d.Set("catalog_resource", false)
 	}
 
 	if cleanPermissions[0].Resource.DataLocation != nil {
@@ -273,23 +404,27 @@ func dataSourcePermissionsRead(d *schema.ResourceData, meta interface{}) error {
 		d.Set("database", nil)
 	}
 
+	if cleanPermissions[0].Resource.LFTag != nil {
+		if err := d.Set("lf_tag", []interface{}{flattenLakeFormationLFTagKeyResource(cleanPermissions[0].Resource.LFTag)}); err != nil {
+			return fmt.Errorf("error setting LF-tag: %w", err)
+		}
+	} else {
+		d.Set("lf_tag", nil)
+	}
+
+	if cleanPermissions[0].Resource.LFTagPolicy != nil {
+		if err := d.Set("lf_tag_policy", []interface{}{flattenLakeFormationLFTagPolicyResource(cleanPermissions[0].Resource.LFTagPolicy)}); err != nil {
+			return fmt.Errorf("error setting LF-tag policy: %w", err)
+		}
+	} else {
+		d.Set("lf_tag_policy", nil)
+	}
+
 	tableSet := false
 
 	if v, ok := d.GetOk("table"); ok && len(v.([]interface{})) > 0 {
 		// since perm list could include TableWithColumns, get the right one
 		for _, perm := range cleanPermissions {
-			if perm.Resource == nil {
-				continue
-			}
-
-			if perm.Resource.TableWithColumns != nil && perm.Resource.TableWithColumns.ColumnWildcard != nil {
-				if err := d.Set("table", []interface{}{flattenLakeFormationTableWithColumnsResourceAsTable(perm.Resource.TableWithColumns)}); err != nil {
-					return fmt.Errorf("error setting table: %w", err)
-				}
-				tableSet = true
-				break
-			}
-
 			if perm.Resource.Table != nil {
 				if err := d.Set("table", []interface{}{flattenLakeFormationTableResource(perm.Resource.Table)}); err != nil {
 					return fmt.Errorf("error setting table: %w", err)
