@@ -653,6 +653,8 @@ func permissionCountForLakeFormationResource(conn *lakeformation.LakeFormation, 
 		}
 
 		input.Resource.LFTag = tflakeformation.ExpandLFTagKeyResource(tfMap)
+
+		noResource = false
 	}
 
 	if v, ok := rs.Primary.Attributes["lf_tag_policy.#"]; ok && v != "" && v != "0" {
@@ -688,6 +690,8 @@ func permissionCountForLakeFormationResource(conn *lakeformation.LakeFormation, 
 		}
 
 		input.Resource.LFTagPolicy = tflakeformation.ExpandLFTagPolicyResource(tfMap)
+
+		noResource = false
 	}
 
 	tableType := ""
@@ -963,10 +967,17 @@ resource "aws_iam_role" "test" {
 }
 EOF
 }
+
 data "aws_caller_identity" "current" {}
-resource "aws_lakeformation_data_lake_settings" "test" {
-  admins = [data.aws_caller_identity.current.arn]
+
+data "aws_iam_session_context" "current" {
+  arn = data.aws_caller_identity.current.arn
 }
+
+resource "aws_lakeformation_data_lake_settings" "test" {
+  admins = [data.aws_iam_session_context.current.issuer_arn]
+}
+
 resource "aws_lakeformation_lf_tag" "test" {
   key    = %[1]q
   values = ["value1", "value2"]
@@ -1009,10 +1020,17 @@ resource "aws_iam_role" "test" {
 }
 EOF
 }
+
 data "aws_caller_identity" "current" {}
-resource "aws_lakeformation_data_lake_settings" "test" {
-  admins = [data.aws_caller_identity.current.arn]
+
+data "aws_iam_session_context" "current" {
+  arn = data.aws_caller_identity.current.arn
 }
+
+resource "aws_lakeformation_data_lake_settings" "test" {
+  admins = [data.aws_iam_session_context.current.issuer_arn]
+}
+
 resource "aws_lakeformation_lf_tag" "test" {
   key    = %[1]q
   values = ["value1", "value2"]
